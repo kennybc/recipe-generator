@@ -4,8 +4,8 @@ import time
 
 here = Path(__file__).parent
 
-classifier = pipeline("ner", model= here / "./model", aggregation_strategy="first")
+classifier = pipeline("text2text-generation", model=here / "./model")
 
 clock = time.time()
-print(classifier("half a cup of chopped onion"))
+print(classifier("generate recipe from ingredients:steak, oil, butter, garlic, rosemary"))
 print("Time elapsed: " + str(time.time() - clock))

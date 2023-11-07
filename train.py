@@ -20,47 +20,32 @@ model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
 # load and preprocess tsv data from a given file path
 def preprocess_data(data_path):
     import ast
+    prefix = "generate recipe from ingredients: "
     data = {"text": [], "labels": []}
 
+    def tokenize_data(data):
+        tokenized_text = tokenizer(
+            data["text"], max_length=1024, truncation=True)
+        tokenized_labels = tokenizer(
+            text_target=data["labels"], max_length=128, truncation=True)
+
+        tokenized_text["labels"] = tokenized_labels["input_ids"]
+        return tokenized_text
+
     def format_label(line):
-        return "[TITLE]" + line[1] + \
-            "[INGREDIENTS]" + "&&".join(ast.literal_eval(line[2])) + \
-            "[DIRECTIONS]" + "&&".join(ast.literal_eval(line[3]))
+        return "[TITLE]" + line[1] + " " + \
+            "[INGREDIENTS] " + "&&".join(ast.literal_eval(line[2])) + " " + \
+            "[DIRECTIONS] " + "&&".join(ast.literal_eval(line[3]))
 
     with open(data_path, "r") as f:
         csv = reader(f)
         next(csv, None)  # skip csv header row
         for line in csv:
-            data["text"].append(ast.literal_eval(line[6]))
+            data["text"].append(prefix + ", ".join(ast.literal_eval(line[6])))
             data["labels"].append(format_label(line))
-    print(data["text"][1])
-    print(data["labels"][1])
-    # return Dataset.from_dict(data)
 
-
-# tokenize the labels of a given dataset
-def tokenize_labels(data):
-    # tokenize the labels of a single example within the dataset
-    def tokenize_label(example):
-        tokenized = tokenizer(
-            example["tokens"], padding=True, truncation=True, is_split_into_words=True)
-        labels = []
-        for i, label in enumerate(example["labels"]):
-            word_ids = tokenized.word_ids(batch_index=i)
-            label_ids = []
-            for word_idx in word_ids:
-                if word_idx is None:
-                    # special tokens created by is_split_into_words labeled -100 (to be ignored)
-                    # https://huggingface.co/docs/transformers/tasks/token_classification#preprocess
-                    label_ids.append(-100)
-                else:
-                    label_ids.append(label[word_idx])
-            labels.append(label_ids)
-
-        tokenized["labels"] = labels
-        return tokenized
-
-    return data.map(tokenize_label, batched=True)
+    dataset = Dataset.from_dict(data)
+    return dataset.map(tokenize_data, batched=True)
 
 
 # split a given dataset into a training set and a testing set
@@ -73,8 +58,7 @@ def split_data(data, train_size=0.9):
 # fine-tune a pre-trained model using tsv data from a given file path
 def train(data_path, save_path="model"):
     data = preprocess_data(data_path)
-    tokenized_data = tokenize_labels(data)
-    train_data, test_data = split_data(tokenized_data)
+    train_data, test_data = split_data(data)
 
     data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer)
     rouge = evaluate.load("rouge")
@@ -90,6 +74,10 @@ def train(data_path, save_path="model"):
 
         results = rouge.compute(
             predictions=true_predictions, references=true_labels, use_stemmer=True)
+
+        prediction_lens = [np.count_nonzero(
+            pred != tokenizer.pad_token_id) for pred in predictions]
+        results["gen_len"] = np.mean(prediction_lens)
         """return {
             "precision": results["overall_precision"],
             "recall": results["overall_recall"],
@@ -127,5 +115,4 @@ def train(data_path, save_path="model"):
 
 
 if __name__ == "__main__":
-    preprocess_data("data/train_tiny.csv")
-# train("./data/train_tiny.tsv", "model")
+    train("data/train_small.csv", "model")
