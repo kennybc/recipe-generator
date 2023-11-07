@@ -12,7 +12,7 @@ logging.set_verbosity_error()
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
-model_name = "t5-base"
+model_name = "t5-small"
 tokenizer = AutoTokenizer.from_pretrained(model_name, model_max_length=512)
 model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
 
@@ -33,9 +33,11 @@ def preprocess_data(data_path):
         return tokenized_text
 
     def format_label(line):
-        return "[TITLE]" + line[1] + " " + \
-            "[INGREDIENTS] " + "&&".join(ast.literal_eval(line[2])) + " " + \
-            "[DIRECTIONS] " + "&&".join(ast.literal_eval(line[3]))
+        return " Title: " + line[1] + \
+            " <section> Ingredients: " + \
+            " <sep> ".join(ast.literal_eval(line[2])) + \
+            " <section> Directions: " + \
+            " <sep> ".join(ast.literal_eval(line[3]))
 
     with open(data_path, "r") as f:
         csv = reader(f)
@@ -78,12 +80,7 @@ def train(data_path, save_path="model"):
         prediction_lens = [np.count_nonzero(
             pred != tokenizer.pad_token_id) for pred in predictions]
         results["gen_len"] = np.mean(prediction_lens)
-        """return {
-            "precision": results["overall_precision"],
-            "recall": results["overall_recall"],
-            "f1": results["overall_f1"],
-            "accuracy": results["overall_accuracy"],
-        }"""
+
         return {k: round(v, 4) for k, v in results.items()}
 
     training_args = Seq2SeqTrainingArguments(
